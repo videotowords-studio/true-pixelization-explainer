@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="通过可交互动画解释 AI 生成图片如何经过主体分离、网格重建、透明度规范和调色板限色，成为可用于游戏开发的真像素精灵。">
+  <meta name="theme-color" content="#163f32">
+  <title>AI 图片如何变成真像素精灵</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: light-dark(rgb(247 249 248), rgb(20 24 22));
+      --foreground: light-dark(rgb(27 34 31), rgb(237 243 239));
+      --card: light-dark(rgb(255 255 255), rgb(29 35 32));
+      --card-foreground: var(--foreground);
+      --secondary: light-dark(rgb(235 240 237), rgb(47 56 51));
+      --secondary-foreground: var(--foreground);
+      --muted: light-dark(rgb(229 234 231), rgb(50 58 54));
+      --muted-foreground: light-dark(rgb(91 102 96), rgb(176 187 181));
+      --border: light-dark(rgb(207 215 211), rgb(70 80 75));
+      --primary: light-dark(rgb(22 92 68), rgb(77 191 145));
+      --primary-foreground: light-dark(rgb(255 255 255), rgb(17 27 23));
+      --viz-series-1: light-dark(rgb(49 148 238), rgb(86 171 249));
+      --viz-series-2: light-dark(rgb(245 132 55), rgb(249 154 85));
+      --viz-series-3: light-dark(rgb(78 194 106), rgb(107 211 132));
+      --viz-series-4: light-dark(rgb(230 104 170), rgb(239 139 188));
+      --font-size-base: 16px;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--background); }
+    body {
+      margin: 0;
+      color: var(--foreground);
+      background: var(--background);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: var(--font-size-base);
+      line-height: 1.65;
+      letter-spacing: 0;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+    .page-intro {
+      max-width: 760px;
+      margin-bottom: 32px;
+    }
+    .page-kicker {
+      margin: 0 0 8px;
+      color: var(--primary);
+      font-weight: 500;
+    }
+    h1, h2, h3 { letter-spacing: 0; }
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.25;
+      font-weight: 500;
+    }
+    .page-lead {
+      margin: 14px 0 0;
+      color: var(--muted-foreground);
+      font-size: 17px;
+    }
+    .animation-region {
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+    }
+    .content-section {
+      margin-top: 48px;
+    }
+    .content-section > h2 {
+      margin: 0 0 18px;
+      font-size: 22px;
+      line-height: 1.35;
+      font-weight: 500;
+    }
+    .steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: process-step;
+      border-top: 1px solid var(--border);
+    }
+    .steps li {
+      position: relative;
+      padding: 20px 0 20px 56px;
+      border-bottom: 1px solid var(--border);
+      counter-increment: process-step;
+    }
+    .steps li::before {
+      content: counter(process-step);
+      position: absolute;
+      top: 20px;
+      left: 0;
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--primary);
+      border-radius: 4px;
+      color: var(--primary);
+      font-weight: 500;
+    }
+    .steps h3 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      line-height: 1.4;
+      font-weight: 500;
+    }
+    .steps p,
+    .principles p,
+    .boundary p {
+      margin: 0;
+      color: var(--muted-foreground);
+    }
+    .principles {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px 32px;
+    }
+    .principles > div {
+      padding-top: 12px;
+      border-top: 2px solid var(--primary);
+    }
+    .principles h3 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      font-weight: 500;
+    }
+    .boundary {
+      padding-left: 16px;
+      border-left: 3px solid var(--viz-series-2);
+    }
+    footer {
+      margin-top: 56px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--muted-foreground);
+      font-size: 14px;
+    }
+    @media (max-width: 560px) {
+      main {
+        width: min(100% - 24px, 920px);
+        padding-top: 28px;
+      }
+      .animation-region { padding: 12px; }
+      .principles { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="page-intro">
+    <p class="page-kicker">True Pixelization</p>
+    <h1>AI 图片如何变成真像素精灵</h1>
+    <p class="page-lead">真像素化不是给图片加马赛克，而是将源图重新投射到明确的逻辑像素网格，并严格控制尺寸、颜色、透明度和缩放方式。</p>
+  </header>
+
+  <div class="animation-region">
+<div id="tp-process">
+  <style>
+    #tp-process {
+      color: var(--foreground);
+      width: 100%;
+      font-family: inherit;
+    }
+    #tp-process * { box-sizing: border-box; }
+    #tp-process .tp-header,
+    #tp-process .tp-controls,
+    #tp-process .tp-stage-line {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #tp-process .tp-header {
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #tp-process h2 {
+      margin: 0;
+      font-weight: 500;
+    }
+    #tp-process .tp-stage-line {
+      margin-top: 4px;
+      color: var(--muted-foreground);
+    }
+    #tp-process .tp-stage-line strong {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    #tp-process .tp-play {
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    #tp-process .tp-canvas-shell {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      min-height: 250px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card);
+    }
+    #tp-process canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #tp-process .tp-controls {
+      margin-top: 10px;
+    }
+    #tp-process .tp-controls label {
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    #tp-process .tp-controls output {
+      min-width: 40px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    #tp-process input[type="range"] {
+      width: 100%;
+      accent-color: var(--primary);
+    }
+    #tp-process .tp-description {
+      min-height: 1.5em;
+      margin-top: 8px;
+      color: var(--muted-foreground);
+    }
+    #tp-process .tp-sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (max-width: 440px) {
+      #tp-process .tp-header { align-items: flex-start; }
+      #tp-process .tp-canvas-shell { aspect-ratio: 4 / 3; }
+      #tp-process .tp-controls { align-items: flex-start; }
+    }
+  </style>
+
+  <section aria-labelledby="tp-title">
+    <div class="tp-header">
+      <div>
+        <h2 id="tp-title">处理流程动画</h2>
+        <div class="tp-stage-line" aria-live="polite">
+          <strong id="tp-step">步骤 1 / 6</strong>
+          <span id="tp-name">AI 源图</span>
+        </div>
+      </div>
+      <button class="tp-play" id="tp-play" type="button" aria-pressed="false">暂停</button>
+    </div>
+
+    <div class="tp-canvas-shell" id="tp-shell">
+      <canvas id="tp-canvas" role="img" aria-label="AI 图片经过主体分离、目标网格重建、透明度规范、调色板限色和质量校验后成为真像素精灵的动态过程"></canvas>
+    </div>
+
+    <div class="tp-controls">
+      <label for="tp-range">过程</label>
+      <input id="tp-range" type="range" min="0" max="5" step="1" value="0" aria-label="选择处理步骤">
+      <output id="tp-count" for="tp-range">1 / 6</output>
+    </div>
+    <div class="tp-description" id="tp-description">AI 负责生成角色内容，但源图仍包含连续颜色、抗锯齿和不固定的像素位置。</div>
+    <div class="tp-sr-only" id="tp-live" aria-live="polite"></div>
+  </section>
+
+  <script>
+    (() => {
+      const root = document.getElementById('tp-process');
+      const canvas = document.getElementById('tp-canvas');
+      const shell = document.getElementById('tp-shell');
+      const playButton = document.getElementById('tp-play');
+      const range = document.getElementById('tp-range');
+      const stepText = document.getElementById('tp-step');
+      const nameText = document.getElementById('tp-name');
+      const countText = document.getElementById('tp-count');
+      const description = document.getElementById('tp-description');
+      const live = document.getElementById('tp-live');
+      const context = canvas.getContext('2d');
+      const colorProbe = document.createElement('span');
+      colorProbe.className = 'tp-sr-only';
+      colorProbe.setAttribute('aria-hidden', 'true');
+      root.appendChild(colorProbe);
+
+      const stages = [
+        ['AI 源图', 'AI 负责生成角色内容，但源图仍包含连续颜色、抗锯齿和不固定的像素位置。'],
+        ['主体分离', '利用透明通道、显式蒙版或指定背景色识别主体，并裁出有效边界。'],
+        ['目标网格重建', '把主体放进固定逻辑网格；每一格汇总对应区域的颜色，而不是直接模糊缩放。'],
+        ['透明度规范', '按阈值把边缘统一为全透明或全不透明，消除半透明抗锯齿。'],
+        ['调色板限色', '把所有可见格映射到限定颜色集合，保证实际颜色数不超过用户上限。'],
+        ['导出与校验', '输出 1 倍逻辑 PNG；展示时只做整数倍最近邻放大，并复检尺寸、颜色和透明度。']
+      ];
+
+      let stage = 0;
+      let stageStarted = performance.now();
+      let playing = true;
+      let sourceCanvas;
+      let sourcePixels;
+      let sourceBox;
+      let sampled;
+      let binary;
+      let quantized;
+      let palette;
+      let rawColorCount = 0;
+      let frameRequest;
+      const logicalSize = 18;
+      const stageDuration = 2600;
+
+      function css(name) {
+        colorProbe.style.color = `var(${name})`;
+        return getComputedStyle(colorProbe).color;
+      }
+
+      function colorToRgb(color) {
+        const probe = document.createElement('canvas');
+        probe.width = 1;
+        probe.height = 1;
+        const probeContext = probe.getContext('2d');
+        probeContext.fillStyle = color;
+        probeContext.fillRect(0, 0, 1, 1);
+        const pixel = probeContext.getImageData(0, 0, 1, 1).data;
+        return [pixel[0], pixel[1], pixel[2]];
+      }
+
+      function roundedRect(ctx, x, y, width, height, radius) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      }
+
+      function makeSource() {
+        sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = 180;
+        sourceCanvas.height = 180;
+        const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+        const body = css('--viz-series-1');
+        const shade = css('--viz-series-2');
+        const shine = css('--viz-series-3');
+        const accent = css('--viz-series-4');
+        const ink = css('--foreground');
+
+        ctx.clearRect(0, 0, 180, 180);
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = ink;
+        ctx.beginPath();
+        ctx.ellipse(90, 151, 61, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = body;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(30, 130);
+        ctx.bezierCurveTo(25, 91, 43, 43, 90, 37);
+        ctx.bezierCurveTo(137, 43, 155, 91, 150, 130);
+        ctx.bezierCurveTo(138, 153, 116, 150, 91, 150);
+        ctx.bezierCurveTo(67, 150, 42, 154, 30, 130);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = shade;
+        ctx.beginPath();
+        ctx.moveTo(34, 116);
+        ctx.bezierCurveTo(47, 137, 73, 140, 97, 139);
+        ctx.bezierCurveTo(120, 139, 139, 132, 150, 116);
+        ctx.lineTo(150, 132);
+        ctx.bezierCurveTo(135, 151, 113, 150, 91, 150);
+        ctx.bezierCurveTo(65, 150, 42, 154, 30, 130);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = shine;
+        ctx.beginPath();
+        ctx.ellipse(65, 66, 19, 10, -0.48, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = ink;
+        ctx.beginPath();
+        ctx.ellipse(68, 101, 8, 12, 0, 0, Math.PI * 2);
+        ctx.ellipse(113, 101, 8, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(91, 112, 20, 0.25, Math.PI - 0.25);
+        ctx.stroke();
+
+        sourcePixels = ctx.getImageData(0, 0, 180, 180);
+        sourceBox = findVisibleBox(sourcePixels);
+        palette = [body, shade, shine, accent, ink, css('--primary')].map(colorToRgb);
+        sampled = areaSample(sourcePixels, sourceBox, logicalSize);
+        binary = sampled.map(pixel => ({
+          r: pixel.r,
+          g: pixel.g,
+          b: pixel.b,
+          a: pixel.a >= 0.45 ? 1 : 0
+        }));
+        quantized = binary.map(pixel => {
+          if (!pixel.a) return { r: 0, g: 0, b: 0, a: 0 };
+          let best = palette[0];
+          let bestDistance = Infinity;
+          for (const candidate of palette) {
+            const dr = pixel.r - candidate[0];
+            const dg = pixel.g - candidate[1];
+            const db = pixel.b - candidate[2];
+            const distance = dr * dr + dg * dg + db * db;
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = candidate;
+            }
+          }
+          return { r: best[0], g: best[1], b: best[2], a: 1 };
+        });
+        rawColorCount = new Set(sampled.filter(pixel => pixel.a > 0).map(pixel => `${pixel.r},${pixel.g},${pixel.b}`)).size;
+      }
+
+      function findVisibleBox(imageData) {
+        let minX = imageData.width;
+        let minY = imageData.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < imageData.height; y += 1) {
+          for (let x = 0; x < imageData.width; x += 1) {
+            const alpha = imageData.data[(y * imageData.width + x) * 4 + 3];
+            if (alpha > 8) {
+              minX = Math.min(minX, x);
+              minY = Math.min(minY, y);
+              maxX = Math.max(maxX, x);
+              maxY = Math.max(maxY, y);
+            }
+          }
+        }
+        return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+      }
+
+      function areaSample(imageData, box, size) {
+        const pixels = [];
+        const data = imageData.data;
+        for (let gy = 0; gy < size; gy += 1) {
+          const top = box.y + gy * box.height / size;
+          const bottom = box.y + (gy + 1) * box.height / size;
+          for (let gx = 0; gx < size; gx += 1) {
+            const left = box.x + gx * box.width / size;
+            const right = box.x + (gx + 1) * box.width / size;
+            let sumWeight = 0;
+            let sumAlpha = 0;
+            let sumR = 0;
+            let sumG = 0;
+            let sumB = 0;
+            for (let sy = Math.floor(top); sy < Math.ceil(bottom); sy += 1) {
+              const yWeight = Math.max(0, Math.min(bottom, sy + 1) - Math.max(top, sy));
+              for (let sx = Math.floor(left); sx < Math.ceil(right); sx += 1) {
+                const xWeight = Math.max(0, Math.min(right, sx + 1) - Math.max(left, sx));
+                const weight = xWeight * yWeight;
+                const index = (sy * imageData.width + sx) * 4;
+                const alpha = data[index + 3] / 255;
+                sumWeight += weight;
+                sumAlpha += alpha * weight;
+                sumR += data[index] * alpha * weight;
+                sumG += data[index + 1] * alpha * weight;
+                sumB += data[index + 2] * alpha * weight;
+              }
+            }
+            pixels.push({
+              r: sumAlpha ? Math.round(sumR / sumAlpha) : 0,
+              g: sumAlpha ? Math.round(sumG / sumAlpha) : 0,
+              b: sumAlpha ? Math.round(sumB / sumAlpha) : 0,
+              a: sumWeight ? sumAlpha / sumWeight : 0
+            });
+          }
+        }
+        return pixels;
+      }
+
+      function checkerboard(ctx, x, y, width, height, cell) {
+        ctx.save();
+        ctx.fillStyle = css('--card');
+        ctx.fillRect(x, y, width, height);
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = css('--muted');
+        for (let row = 0; row < Math.ceil(height / cell); row += 1) {
+          for (let col = 0; col < Math.ceil(width / cell); col += 1) {
+            if ((row + col) % 2 === 0) {
+              ctx.fillRect(x + col * cell, y + row * cell, cell, cell);
+            }
+          }
+        }
+        ctx.restore();
+      }
+
+      function label(text, x, y, align = 'center') {
+        context.save();
+        context.fillStyle = css('--foreground');
+        context.font = '500 13px system-ui, sans-serif';
+        context.textAlign = align;
+        context.textBaseline = 'middle';
+        context.fillText(text, x, y);
+        context.restore();
+      }
+
+      function mutedLabel(text, x, y, align = 'center') {
+        context.save();
+        context.fillStyle = css('--muted-foreground');
+        context.font = '400 12px system-ui, sans-serif';
+        context.textAlign = align;
+        context.textBaseline = 'middle';
+        context.fillText(text, x, y);
+        context.restore();
+      }
+
+      function drawArrow(x1, y, x2, text) {
+        context.save();
+        context.strokeStyle = css('--border');
+        context.fillStyle = css('--foreground');
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(x1, y);
+        context.lineTo(x2, y);
+        context.stroke();
+        context.beginPath();
+        context.moveTo(x2, y);
+        context.lineTo(x2 - 8, y - 5);
+        context.lineTo(x2 - 8, y + 5);
+        context.closePath();
+        context.fill();
+        mutedLabel(text, (x1 + x2) / 2, y - 16);
+        context.restore();
+      }
+
+      function drawPixelGrid(pixels, x, y, size, reveal = 1, gridLines = false) {
+        const cell = size / logicalSize;
+        const shown = Math.floor(pixels.length * Math.max(0, Math.min(1, reveal)));
+        checkerboard(context, x, y, size, size, Math.max(4, cell));
+        for (let index = 0; index < shown; index += 1) {
+          const pixel = pixels[index];
+          if (!pixel.a) continue;
+          const col = index % logicalSize;
+          const row = Math.floor(index / logicalSize);
+          context.fillStyle = `rgba(${pixel.r}, ${pixel.g}, ${pixel.b}, ${pixel.a})`;
+          context.fillRect(x + col * cell, y + row * cell, Math.ceil(cell), Math.ceil(cell));
+        }
+        if (gridLines && cell >= 8) {
+          context.save();
+          context.strokeStyle = css('--border');
+          context.globalAlpha = 0.5;
+          context.lineWidth = 1;
+          for (let index = 0; index <= logicalSize; index += 1) {
+            const offset = index * cell;
+            context.beginPath();
+            context.moveTo(x + offset, y);
+            context.lineTo(x + offset, y + size);
+            context.stroke();
+            context.beginPath();
+            context.moveTo(x, y + offset);
+            context.lineTo(x + size, y + offset);
+            context.stroke();
+          }
+          context.restore();
+        }
+        context.strokeStyle = css('--border');
+        context.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      }
+
+      function drawSource(x, y, size, alpha = 1) {
+        checkerboard(context, x, y, size, size, Math.max(8, size / 12));
+        context.save();
+        context.globalAlpha = alpha;
+        context.imageSmoothingEnabled = true;
+        context.drawImage(sourceCanvas, x, y, size, size);
+        context.restore();
+        context.strokeStyle = css('--border');
+        context.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      }
+
+      function drawPalette(x, y, availableWidth, activeCount) {
+        const chip = Math.min(32, (availableWidth - 5 * 8) / 6);
+        const total = chip * 6 + 5 * 8;
+        let currentX = x + (availableWidth - total) / 2;
+        for (let index = 0; index < palette.length; index += 1) {
+          context.save();
+          context.globalAlpha = index < activeCount ? 1 : 0.2;
+          context.fillStyle = `rgb(${palette[index][0]}, ${palette[index][1]}, ${palette[index][2]})`;
+          context.fillRect(currentX, y, chip, chip);
+          context.strokeStyle = css('--border');
+          context.strokeRect(currentX + 0.5, y + 0.5, chip - 1, chip - 1);
+          context.restore();
+          currentX += chip + 8;
+        }
+      }
+
+      function drawMetric(x, y, width, title, value) {
+        context.save();
+        context.fillStyle = css('--secondary');
+        roundedRect(context, x, y, width, 47, 5);
+        context.fill();
+        mutedLabel(title, x + width / 2, y + 14);
+        label(value, x + width / 2, y + 33);
+        context.restore();
+      }
+
+      function drawFrame(progress) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const targetWidth = Math.max(1, Math.round(rect.width * dpr));
+        const targetHeight = Math.max(1, Math.round(rect.height * dpr));
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+        }
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const width = rect.width;
+        const height = rect.height;
+        context.clearRect(0, 0, width, height);
+        context.fillStyle = css('--card');
+        context.fillRect(0, 0, width, height);
+
+        if (!sourceCanvas) makeSource();
+        const compact = width < 470;
+        const top = compact ? 42 : 48;
+        const visualSize = Math.min(compact ? width * 0.42 : width * 0.3, height - 115, 230);
+        const centerX = width / 2;
+
+        if (stage === 0) {
+          const size = Math.min(width - 70, height - 78, 270);
+          const x = centerX - size / 2;
+          const y = (height - size) / 2 + 7;
+          drawSource(x, y, size);
+          label('连续像素源图', centerX, y - 18);
+          mutedLabel('抗锯齿 · 半透明边缘 · 颜色数量不固定', centerX, y + size + 18);
+        } else if (stage === 1) {
+          const size = Math.min(width - 76, height - 80, 270);
+          const x = centerX - size / 2;
+          const y = (height - size) / 2 + 7;
+          drawSource(x, y, size);
+          const scale = size / 180;
+          const bx = x + sourceBox.x * scale;
+          const by = y + sourceBox.y * scale;
+          const bw = sourceBox.width * scale;
+          const bh = sourceBox.height * scale;
+          context.save();
+          context.strokeStyle = css('--viz-series-3');
+          context.lineWidth = 2;
+          context.setLineDash([6, 5]);
+          context.globalAlpha = 0.45 + progress * 0.55;
+          context.strokeRect(bx, by, bw, bh);
+          context.restore();
+          label('Alpha / 蒙版识别主体', centerX, y - 18);
+          mutedLabel('裁掉无效透明区域，保留完整主体边界', centerX, y + size + 18);
+        } else if (stage === 2) {
+          const gap = compact ? 34 : 76;
+          const size = Math.min(visualSize, (width - gap - 34) / 2);
+          const leftX = centerX - gap / 2 - size;
+          const rightX = centerX + gap / 2;
+          const y = top;
+          drawSource(leftX, y, size, 1 - progress * 0.28);
+          drawArrow(leftX + size + 8, y + size / 2, rightX - 8, '面积采样');
+          drawPixelGrid(sampled, rightX, y, size, progress, true);
+          label('裁切后的主体', leftX + size / 2, y - 18);
+          label(`${logicalSize} × ${logicalSize} 逻辑网格`, rightX + size / 2, y - 18);
+          mutedLabel('每格汇总其覆盖区域的预乘透明颜色', centerX, y + size + 22);
+        } else if (stage === 3) {
+          const gap = compact ? 25 : 64;
+          const size = Math.min(visualSize, (width - gap - 32) / 2);
+          const leftX = centerX - gap / 2 - size;
+          const rightX = centerX + gap / 2;
+          const y = top;
+          drawPixelGrid(sampled, leftX, y, size, 1, false);
+          const alphaMix = sampled.map((pixel, index) => {
+            if (progress < 0.5) return pixel;
+            const target = binary[index];
+            const mix = (progress - 0.5) * 2;
+            return { ...pixel, a: pixel.a * (1 - mix) + target.a * mix };
+          });
+          drawPixelGrid(alphaMix, rightX, y, size, 1, true);
+          label('采样后的半透明边缘', leftX + size / 2, y - 18);
+          label('二值透明', rightX + size / 2, y - 18);
+          mutedLabel('阈值 0.45：低于阈值变透明，其余变不透明', centerX, y + size + 22);
+        } else if (stage === 4) {
+          const gap = compact ? 25 : 64;
+          const size = Math.min(visualSize, (width - gap - 32) / 2);
+          const leftX = centerX - gap / 2 - size;
+          const rightX = centerX + gap / 2;
+          const y = top - 8;
+          drawPixelGrid(binary, leftX, y, size, 1, false);
+          const mixed = binary.map((pixel, index) => progress < (index / binary.length) ? pixel : quantized[index]);
+          drawPixelGrid(mixed, rightX, y, size, 1, false);
+          label(`${rawColorCount} 种采样色`, leftX + size / 2, y - 18);
+          label('最多 6 色', rightX + size / 2, y - 18);
+          drawPalette(centerX - Math.min(width - 40, 360) / 2, y + size + 20, Math.min(width - 40, 360), Math.max(1, Math.ceil(progress * 6)));
+        } else {
+          const size = Math.min(width - 70, height - 112, 270);
+          const x = centerX - size / 2;
+          const y = 28;
+          drawPixelGrid(quantized, x, y, size, 1, false);
+          label('整数倍最近邻预览', centerX, y + size + 18);
+          const metricGap = 8;
+          const metricWidth = Math.min(128, (width - 36 - metricGap * 2) / 3);
+          const totalWidth = metricWidth * 3 + metricGap * 2;
+          const metricX = centerX - totalWidth / 2;
+          const metricY = height - 57;
+          drawMetric(metricX, metricY, metricWidth, '逻辑尺寸', `${logicalSize} × ${logicalSize}`);
+          drawMetric(metricX + metricWidth + metricGap, metricY, metricWidth, '可见颜色', '≤ 6');
+          drawMetric(metricX + (metricWidth + metricGap) * 2, metricY, metricWidth, '透明度', '0 / 255');
+        }
+      }
+
+      function updateStage(nextStage, announce = false) {
+        stage = Math.max(0, Math.min(stages.length - 1, nextStage));
+        stageStarted = performance.now();
+        range.value = String(stage);
+        stepText.textContent = `步骤 ${stage + 1} / ${stages.length}`;
+        nameText.textContent = stages[stage][0];
+        countText.value = `${stage + 1} / ${stages.length}`;
+        countText.textContent = `${stage + 1} / ${stages.length}`;
+        description.textContent = stages[stage][1];
+        if (announce) live.textContent = `${stages[stage][0]}。${stages[stage][1]}`;
+        drawFrame(0);
+      }
+
+      function animate(now) {
+        let progress = Math.min(1, (now - stageStarted) / stageDuration);
+        if (!playing) progress = 1;
+        drawFrame(progress);
+        if (playing && progress >= 1) {
+          updateStage((stage + 1) % stages.length, true);
+        }
+        frameRequest = requestAnimationFrame(animate);
+      }
+
+      playButton.addEventListener('click', () => {
+        playing = !playing;
+        playButton.textContent = playing ? '暂停' : '播放';
+        playButton.setAttribute('aria-pressed', String(!playing));
+        stageStarted = performance.now();
+      });
+
+      range.addEventListener('input', () => {
+        playing = false;
+        playButton.textContent = '播放';
+        playButton.setAttribute('aria-pressed', 'true');
+        updateStage(Number(range.value), true);
+      });
+
+      const observer = new ResizeObserver(() => drawFrame(1));
+      observer.observe(shell);
+      makeSource();
+      updateStage(0);
+      cancelAnimationFrame(frameRequest);
+      frameRequest = requestAnimationFrame(animate);
+    })();
+  </script>
+</div>
+  </div>
+
+  <section class="content-section" aria-labelledby="steps-title">
+    <h2 id="steps-title">实现步骤</h2>
+    <ol class="steps">
+      <li>
+        <h3>AI 生成源图</h3>
+        <p>AI 负责角色造型、动作和画面内容。源图仍可能包含大量连续颜色、抗锯齿和半透明边缘，因此不能直接作为受严格像素规则约束的最终资源。</p>
+      </li>
+      <li>
+        <h3>主体分离</h3>
+        <p>程序通过透明通道、用户提供的蒙版，或指定背景色确定主体范围。普通不透明背景无法可靠区分主体，实际生产中优先让 AI 输出透明背景图片。</p>
+      </li>
+      <li>
+        <h3>目标像素网格重建</h3>
+        <p>先确定最终逻辑尺寸，例如 32×32。程序把主体按比例放入目标网格，并让每个目标格汇总其覆盖的源图区域，而不是直接使用普通平滑缩放。</p>
+      </li>
+      <li>
+        <h3>透明度规范化</h3>
+        <p>对于需要硬边的游戏精灵，程序按阈值把每格透明度统一为完全透明或完全不透明，从而清除 AI 图片边缘残留的半透明抗锯齿。</p>
+      </li>
+      <li>
+        <h3>调色板限色</h3>
+        <p>调色板是图片允许使用的颜色集合。程序将所有可见格映射到自动生成或用户指定的调色板，并确保实际颜色数量不超过设定上限。</p>
+      </li>
+      <li>
+        <h3>导出与质量校验</h3>
+        <p>程序输出 1 倍逻辑尺寸 PNG；预览时只进行整数倍最近邻放大。保存后重新读取文件，并检查尺寸、颜色数量、透明度规则和像素内容是否一致。</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="content-section" aria-labelledby="rules-title">
+    <h2 id="rules-title">什么条件算“真像素”</h2>
+    <div class="principles">
+      <div>
+        <h3>固定逻辑网格</h3>
+        <p>最终文件本身就是 16×16、32×32 或 64×64 等明确尺寸，而不是一张大图伪装成像素效果。</p>
+      </div>
+      <div>
+        <h3>一格一个离散颜色</h3>
+        <p>每个逻辑像素只有一个确定颜色，不依赖模糊、渐变或显示设备的平滑插值。</p>
+      </div>
+      <div>
+        <h3>颜色数量受控</h3>
+        <p>所有可见像素使用的颜色不超过用户设定上限，也可以强制使用项目已有的固定调色板。</p>
+      </div>
+      <div>
+        <h3>只用最近邻放大</h3>
+        <p>展示和游戏运行时完整复制像素块，不计算中间颜色，因此不会出现模糊边缘。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="content-section boundary" aria-labelledby="boundary-title">
+    <h2 id="boundary-title">能力边界</h2>
+    <p>这套流程可以保证尺寸、颜色、透明度和缩放方式符合机械规则，但“规则合格”不等于“像素美术质量合格”。极小尺寸下的轮廓、表情和关键细节仍可能需要重新生成源图或进行人工像素级调整。</p>
+  </section>
+
+  <footer>用于说明 AI 游戏素材的确定性真像素化处理原理。</footer>
+</main>
+</body>
+</html>
