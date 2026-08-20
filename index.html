@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="通过可交互动画解释 AI 生成图片如何经过主体分离、网格重建、透明度规范和调色板限色，成为可用于游戏开发的真像素精灵。">
+  <meta name="description" content="上传静态图片并生成经过尺寸、颜色和透明度校验的真像素精灵，或查看真像素化处理原理。">
   <meta name="theme-color" content="#163f32">
   <link rel="icon" href="data:,">
-  <title>AI 图片如何变成真像素精灵</title>
+  <title>真像素工作台</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -25,6 +25,11 @@
       --viz-series-2: light-dark(rgb(245 132 55), rgb(249 154 85));
       --viz-series-3: light-dark(rgb(78 194 106), rgb(107 211 132));
       --viz-series-4: light-dark(rgb(230 104 170), rgb(239 139 188));
+      --success: light-dark(rgb(24 112 76), rgb(91 205 151));
+      --warning: light-dark(rgb(183 92 25), rgb(242 166 95));
+      --danger: light-dark(rgb(178 58 56), rgb(244 124 120));
+      --canvas-a: light-dark(rgb(242 244 243), rgb(27 32 30));
+      --canvas-b: light-dark(rgb(224 229 226), rgb(39 46 42));
       --font-size-base: 16px;
     }
     * { box-sizing: border-box; }
@@ -39,9 +44,538 @@
       letter-spacing: 0;
     }
     main {
-      width: min(920px, calc(100% - 32px));
+      width: min(1180px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 48px 0 64px;
+      padding: 24px 0 64px;
+    }
+    [hidden] { display: none !important; }
+    button,
+    input,
+    select,
+    textarea { font: inherit; }
+    button,
+    label,
+    summary,
+    select,
+    input[type="range"] { cursor: pointer; }
+    :focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--viz-series-1) 65%, transparent);
+      outline-offset: 2px;
+    }
+    .app-topbar {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .app-identity {
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .app-name {
+      margin: 0;
+      color: var(--foreground);
+      font-family: "Avenir Next", "Trebuchet MS", "PingFang SC", sans-serif;
+      font-size: 18px;
+      font-weight: 650;
+    }
+    .app-context {
+      margin: 0;
+      color: var(--muted-foreground);
+      font-size: 13px;
+    }
+    .service-state {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted-foreground);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .service-state::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--muted-foreground);
+    }
+    .service-state[data-state="ready"]::before { background: var(--success); }
+    .service-state[data-state="error"]::before { background: var(--danger); }
+    .app-tabs {
+      display: flex;
+      gap: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+    .app-tab {
+      position: relative;
+      min-height: 48px;
+      padding: 0 2px;
+      border: 0;
+      background: transparent;
+      color: var(--muted-foreground);
+      font-weight: 500;
+    }
+    .app-tab[aria-selected="true"] { color: var(--foreground); }
+    .app-tab[aria-selected="true"]::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 3px;
+      background: var(--primary);
+    }
+    .tab-panel { padding-top: 30px; }
+    #principle-panel {
+      width: min(920px, 100%);
+      margin: 0 auto;
+    }
+    .tool-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 22px;
+    }
+    .tool-heading h1 {
+      font-family: "Avenir Next", "Trebuchet MS", "PingFang SC", sans-serif;
+      font-size: 28px;
+      font-weight: 650;
+    }
+    .tool-heading p {
+      margin: 5px 0 0;
+      color: var(--muted-foreground);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+    }
+    .tool-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .tool-workspace {
+      min-width: 0;
+      padding: 24px 28px 30px 0;
+    }
+    .tool-settings {
+      min-width: 0;
+      padding: 24px 0 30px 28px;
+      border-left: 1px solid var(--border);
+    }
+    .upload-zone {
+      min-height: 86px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      background: var(--card);
+      transition: border-color 160ms ease, background-color 160ms ease;
+    }
+    .upload-zone:hover,
+    .upload-zone.is-dragging {
+      border-color: var(--viz-series-1);
+      background: color-mix(in srgb, var(--viz-series-1) 7%, var(--card));
+    }
+    #source-image:focus-visible + .upload-zone,
+    .segmented input:focus-visible + label {
+      outline: 3px solid color-mix(in srgb, var(--viz-series-1) 65%, transparent);
+      outline-offset: 2px;
+    }
+    .upload-copy { min-width: 0; }
+    .upload-copy strong,
+    .upload-copy span { display: block; }
+    .upload-copy strong { font-weight: 600; }
+    .upload-copy span {
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--muted-foreground);
+      font-size: 13px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .choose-file {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      font-weight: 500;
+    }
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .preview-frame { min-width: 0; margin: 0; }
+    .preview-caption {
+      min-height: 30px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .preview-caption strong { font-size: 14px; font-weight: 600; }
+    .preview-caption span {
+      overflow: hidden;
+      color: var(--muted-foreground);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .preview-stage {
+      position: relative;
+      width: 100%;
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background-color: var(--canvas-a);
+      background-image:
+        linear-gradient(45deg, var(--canvas-b) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--canvas-b) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--canvas-b) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--canvas-b) 75%);
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      background-size: 16px 16px;
+      aspect-ratio: 1 / 1;
+    }
+    .preview-stage img {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: calc(100% - 28px);
+      max-height: calc(100% - 28px);
+      object-fit: contain;
+    }
+    #result-preview { image-rendering: pixelated; }
+    .preview-empty,
+    .processing-state {
+      width: min(190px, calc(100% - 30px));
+      color: var(--muted-foreground);
+      text-align: center;
+      font-size: 14px;
+    }
+    .pixel-mark {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3px;
+      margin: 0 auto 14px;
+    }
+    .pixel-mark i { background: var(--border); }
+    .pixel-mark i:nth-child(2),
+    .pixel-mark i:nth-child(5),
+    .pixel-mark i:nth-child(7),
+    .pixel-mark i:nth-child(10),
+    .pixel-mark i:nth-child(11),
+    .pixel-mark i:nth-child(16) { background: var(--primary); }
+    .processing-state::before {
+      content: "";
+      width: 24px;
+      height: 24px;
+      display: block;
+      margin: 0 auto 12px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: tool-spin 800ms linear infinite;
+    }
+    @keyframes tool-spin { to { transform: rotate(360deg); } }
+    .result-area {
+      margin-top: 22px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .result-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .result-status strong { font-size: 16px; font-weight: 600; }
+    .result-status strong::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      display: inline-block;
+      margin-right: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    .result-status span { color: var(--muted-foreground); font-size: 13px; }
+    .quality-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .quality-metrics > div {
+      min-width: 0;
+      padding: 12px 12px 12px 0;
+    }
+    .quality-metrics > div + div {
+      padding-left: 12px;
+      border-left: 1px solid var(--border);
+    }
+    .quality-metrics dt {
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .quality-metrics dd {
+      margin: 2px 0 0;
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .palette-result { margin-top: 16px; }
+    .palette-result h3 {
+      margin: 0 0 9px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .palette-swatches {
+      min-height: 30px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .palette-swatch {
+      width: 30px;
+      height: 30px;
+      border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent);
+      border-radius: 3px;
+    }
+    .warning-list {
+      margin: 14px 0 0;
+      padding-left: 20px;
+      color: var(--warning);
+      font-size: 13px;
+    }
+    .result-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .action-button {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 13px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .action-button.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--primary-foreground);
+    }
+    .settings-title {
+      margin: 0 0 14px;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .setting-group {
+      margin: 0;
+      padding: 16px 0;
+      border: 0;
+      border-top: 1px solid var(--border);
+    }
+    .setting-group legend,
+    .setting-group h3 {
+      margin: 0 0 12px;
+      padding: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .size-presets {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .size-preset {
+      min-width: 0;
+      min-height: 34px;
+      padding: 5px 3px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--muted-foreground);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+    }
+    .size-preset.is-active {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 7%, var(--card));
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .field { min-width: 0; margin-top: 11px; }
+    .field:first-child { margin-top: 0; }
+    .field-row .field { margin-top: 0; }
+    .field label,
+    .field-label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .field input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    .field select,
+    .field textarea {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--card);
+      color: var(--foreground);
+    }
+    .field input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    .field select { padding: 7px 9px; }
+    .field textarea {
+      min-height: 68px;
+      resize: vertical;
+      padding: 8px 9px;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+    }
+    .field-note {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted-foreground);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .segmented label {
+      min-height: 36px;
+      display: grid;
+      place-items: center;
+      margin: 0;
+      padding: 5px 7px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--muted-foreground);
+      font-size: 12px;
+      text-align: center;
+    }
+    .segmented input:checked + label {
+      border-color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 7%, var(--card));
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .range-line {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 44px;
+      align-items: center;
+      gap: 9px;
+    }
+    .range-line input { width: 100%; accent-color: var(--primary); }
+    .range-line output {
+      text-align: right;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+    }
+    .checkbox-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--foreground);
+      font-size: 13px;
+    }
+    .checkbox-line input { margin: 4px 0 0; accent-color: var(--primary); }
+    .advanced-settings {
+      border-top: 1px solid var(--border);
+    }
+    .advanced-settings summary {
+      padding: 16px 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .advanced-settings[open] summary { padding-bottom: 10px; }
+    .advanced-body { padding-bottom: 16px; }
+    .file-compact {
+      width: 100%;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .submit-button {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 18px;
+      border: 1px solid var(--primary);
+      border-radius: 5px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-weight: 600;
+    }
+    .submit-button:disabled {
+      cursor: not-allowed;
+      border-color: var(--border);
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+    .form-status {
+      min-height: 20px;
+      margin: 9px 0 0;
+      color: var(--muted-foreground);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .form-status.is-error { color: var(--danger); }
+    .file-protocol-note {
+      margin: 0 0 18px;
+      padding: 11px 13px;
+      border-left: 3px solid var(--warning);
+      background: color-mix(in srgb, var(--warning) 7%, var(--card));
+      color: var(--foreground);
+      font-size: 13px;
     }
     .page-intro {
       max-width: 760px;
@@ -143,18 +677,289 @@
       color: var(--muted-foreground);
       font-size: 14px;
     }
+    @media (max-width: 900px) {
+      .tool-layout { grid-template-columns: 1fr; }
+      .tool-workspace { padding-right: 0; }
+      .tool-settings {
+        padding: 24px 0 30px;
+        border-top: 1px solid var(--border);
+        border-left: 0;
+      }
+    }
     @media (max-width: 560px) {
       main {
-        width: min(100% - 24px, 920px);
-        padding-top: 28px;
+        width: min(100% - 24px, 1180px);
+        padding-top: 12px;
       }
+      .app-topbar { min-height: 46px; }
+      .app-context { display: none; }
+      .service-state { font-size: 11px; }
+      .app-tabs { gap: 0; }
+      .app-tab { width: 50%; }
+      .tab-panel { padding-top: 24px; }
+      .tool-heading { align-items: flex-start; }
+      .tool-heading h1 { font-size: 25px; }
+      .tool-layout { border-top: 0; }
+      .tool-workspace { padding-top: 0; }
+      .upload-zone { align-items: flex-start; }
+      .preview-grid { grid-template-columns: 1fr; }
+      .preview-stage { min-height: 260px; }
+      .quality-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .quality-metrics > div:nth-child(3) {
+        padding-left: 0;
+        border-top: 1px solid var(--border);
+        border-left: 0;
+      }
+      .quality-metrics > div:nth-child(4) { border-top: 1px solid var(--border); }
+      .result-actions .action-button { flex: 1 1 100%; }
       .animation-region { padding: 12px; }
       .principles { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+      }
     }
   </style>
 </head>
 <body>
 <main>
+  <header class="app-topbar">
+    <div class="app-identity">
+      <p class="app-name">True Pixelizer</p>
+      <p class="app-context">静态精灵处理工具</p>
+    </div>
+    <div class="service-state" id="service-state" data-state="checking" role="status" aria-live="polite">正在准备处理引擎</div>
+  </header>
+
+  <nav class="app-tabs" role="tablist" aria-label="页面视图">
+    <button class="app-tab" id="tool-tab" type="button" role="tab" aria-selected="true" aria-controls="tool-panel" tabindex="0" data-tab="tool">工具使用</button>
+    <button class="app-tab" id="principle-tab" type="button" role="tab" aria-selected="false" aria-controls="principle-panel" tabindex="-1" data-tab="principle">查看原理</button>
+  </nav>
+
+  <section class="tab-panel" id="tool-panel" role="tabpanel" aria-labelledby="tool-tab">
+    <div class="tool-heading">
+      <div>
+        <h1>真像素工作台</h1>
+        <p>STATIC SPRITE / PRIVATE PROCESSING</p>
+      </div>
+    </div>
+
+    <p class="file-protocol-note" id="file-protocol-note" hidden>当前以文件方式打开，原理页仍可查看。运行 <code>python3 server.py</code> 后通过本地地址使用工具。</p>
+
+    <div class="tool-layout">
+      <div class="tool-workspace">
+        <input class="visually-hidden" id="source-image" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="source-limit">
+        <label class="upload-zone" id="upload-zone" for="source-image">
+          <span class="upload-copy">
+            <strong id="upload-title">选择源图片</strong>
+            <span id="source-limit">PNG、JPEG 或 WebP，单张不超过 20 MB</span>
+          </span>
+          <span class="choose-file">浏览文件</span>
+        </label>
+
+        <div class="preview-grid">
+          <figure class="preview-frame">
+            <figcaption class="preview-caption">
+              <strong>源图</strong>
+              <span id="source-meta">等待上传</span>
+            </figcaption>
+            <div class="preview-stage">
+              <div class="preview-empty" id="source-empty">
+                <span class="pixel-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                选择一张静态图片
+              </div>
+              <img id="source-preview" alt="待处理的源图片" hidden>
+            </div>
+          </figure>
+
+          <figure class="preview-frame">
+            <figcaption class="preview-caption">
+              <strong>真像素结果</strong>
+              <span id="result-meta">等待处理</span>
+            </figcaption>
+            <div class="preview-stage">
+              <div class="preview-empty" id="result-empty">
+                <span class="pixel-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                结果将在这里显示
+              </div>
+              <div class="processing-state" id="processing-state" hidden>正在重建目标像素网格</div>
+              <img id="result-preview" alt="真像素化处理结果" hidden>
+            </div>
+          </figure>
+        </div>
+
+        <section class="result-area" id="result-area" aria-labelledby="result-title" hidden>
+          <div class="result-status">
+            <strong id="result-title">技术规则校验通过</strong>
+            <span id="result-time"></span>
+          </div>
+
+          <dl class="quality-metrics">
+            <div><dt>逻辑尺寸</dt><dd id="metric-size">-</dd></div>
+            <div><dt>实际颜色</dt><dd id="metric-colors">-</dd></div>
+            <div><dt>透明度</dt><dd id="metric-alpha">-</dd></div>
+            <div><dt>PNG 复检</dt><dd id="metric-roundtrip">-</dd></div>
+          </dl>
+
+          <div class="palette-result">
+            <h3>实际调色板</h3>
+            <div class="palette-swatches" id="palette-swatches" aria-label="实际使用的颜色"></div>
+          </div>
+          <ul class="warning-list" id="warning-list" hidden></ul>
+
+          <div class="result-actions">
+            <a class="action-button primary" data-download="sprite" href="#">下载 sprite.png</a>
+            <a class="action-button" data-download="preview" href="#">下载放大预览</a>
+            <a class="action-button" data-download="report" href="#">下载质量报告</a>
+            <a class="action-button" data-download="bundle" href="#">下载全部结果</a>
+          </div>
+        </section>
+      </div>
+
+      <form class="tool-settings" id="pixel-form" novalidate>
+        <h2 class="settings-title">处理参数</h2>
+
+        <fieldset class="setting-group">
+          <legend>目标网格</legend>
+          <div class="size-presets" aria-label="常用逻辑尺寸">
+            <button class="size-preset" type="button" data-size="16">16</button>
+            <button class="size-preset is-active" type="button" data-size="32">32</button>
+            <button class="size-preset" type="button" data-size="64">64</button>
+            <button class="size-preset" type="button" data-size="128">128</button>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="target-width">宽度</label>
+              <input id="target-width" name="width" type="number" min="1" max="1024" step="1" value="32" required>
+            </div>
+            <div class="field">
+              <label for="target-height">高度</label>
+              <input id="target-height" name="height" type="number" min="1" max="1024" step="1" value="32" required>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="setting-group">
+          <legend>颜色与透明度</legend>
+          <div class="field">
+            <label for="max-colors">最大颜色数</label>
+            <input id="max-colors" name="max_colors" type="number" min="1" max="256" step="1" value="16" required>
+          </div>
+          <div class="field">
+            <span class="field-label">透明度</span>
+            <div class="segmented">
+              <input class="visually-hidden" id="alpha-binary" type="radio" name="alpha_mode" value="binary" checked>
+              <label for="alpha-binary">二值透明</label>
+              <input class="visually-hidden" id="alpha-preserve" type="radio" name="alpha_mode" value="preserve">
+              <label for="alpha-preserve">保留半透明</label>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="setting-group">
+          <legend>画布适配</legend>
+          <div class="field-row">
+            <div class="field">
+              <label for="fit-mode">适配方式</label>
+              <select id="fit-mode" name="fit">
+                <option value="contain">完整放入</option>
+                <option value="cover">裁切铺满</option>
+                <option value="stretch">拉伸铺满</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="anchor-mode">主体位置</label>
+              <select id="anchor-mode" name="anchor">
+                <option value="center">居中</option>
+                <option value="bottom-center">底部居中</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="padding">画布留白</label>
+            <input id="padding" name="padding" type="number" min="0" max="511" step="1" value="0">
+          </div>
+        </fieldset>
+
+        <details class="advanced-settings">
+          <summary>高级设置</summary>
+          <div class="advanced-body">
+            <div class="field" id="alpha-threshold-field">
+              <label for="alpha-threshold">透明阈值</label>
+              <div class="range-line">
+                <input id="alpha-threshold" name="alpha_threshold" type="range" min="0" max="1" step="0.05" value="0.5">
+                <output id="alpha-threshold-output" for="alpha-threshold">0.50</output>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="trim-mode">主体裁切</label>
+                <select id="trim-mode" name="trim">
+                  <option value="alpha">按可见区域</option>
+                  <option value="none">保留原画布</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="preview-scale">预览倍率</label>
+                <select id="preview-scale" name="preview_scale">
+                  <option value="1">1 倍</option>
+                  <option value="2">2 倍</option>
+                  <option value="4">4 倍</option>
+                  <option value="8" selected>8 倍</option>
+                  <option value="16">16 倍</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="checkbox-line" for="dither-enabled">
+                <input id="dither-enabled" type="checkbox">
+                使用 4×4 有序抖色
+              </label>
+            </div>
+            <div class="field">
+              <label for="mask-image">主体蒙版</label>
+              <input class="file-compact" id="mask-image" type="file" accept="image/png,image/jpeg,image/webp">
+              <span class="field-note">可选，尺寸需与源图一致</span>
+            </div>
+            <div class="field">
+              <label class="checkbox-line" for="key-color-enabled">
+                <input id="key-color-enabled" type="checkbox">
+                移除指定背景色
+              </label>
+            </div>
+            <div class="field-row" id="key-color-fields" hidden>
+              <div class="field">
+                <label for="key-color">背景颜色</label>
+                <input id="key-color" type="color" value="#ff00ff">
+              </div>
+              <div class="field">
+                <label for="key-tolerance">颜色容差</label>
+                <input id="key-tolerance" type="number" min="0" max="441.7" step="1" value="0">
+              </div>
+            </div>
+            <div class="field">
+              <label for="fixed-palette">固定调色板</label>
+              <textarea id="fixed-palette" placeholder="#1A1C2C, #5D275D, #F4F4F4"></textarea>
+              <span class="field-note">留空时自动生成；用逗号或空格分隔颜色</span>
+            </div>
+            <div class="field">
+              <label for="locked-colors">锁定颜色</label>
+              <textarea id="locked-colors" placeholder="#1A1C2C"></textarea>
+            </div>
+          </div>
+        </details>
+
+        <button class="submit-button" id="submit-button" type="submit" disabled>生成真像素图</button>
+        <p class="form-status" id="form-status" role="status" aria-live="polite">请先选择源图片</p>
+      </form>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="principle-panel" role="tabpanel" aria-labelledby="principle-tab" hidden>
   <header class="page-intro">
     <p class="page-kicker">True Pixelization</p>
     <h1>AI 图片如何变成真像素精灵</h1>
@@ -310,7 +1115,8 @@
 
       let stage = 0;
       let stageStarted = performance.now();
-      let playing = true;
+      let panelActive = !root.closest('[hidden]');
+      let playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       let sourceCanvas;
       let sourcePixels;
       let sourceBox;
@@ -745,10 +1551,14 @@
         countText.textContent = `${stage + 1} / ${stages.length}`;
         description.textContent = stages[stage][1];
         if (announce) live.textContent = `${stages[stage][0]}。${stages[stage][1]}`;
-        drawFrame(0);
+        if (panelActive) drawFrame(0);
       }
 
       function animate(now) {
+        if (!panelActive) {
+          frameRequest = requestAnimationFrame(animate);
+          return;
+        }
         let progress = Math.min(1, (now - stageStarted) / stageDuration);
         if (!playing) progress = 1;
         drawFrame(progress);
@@ -772,10 +1582,23 @@
         updateStage(Number(range.value), true);
       });
 
-      const observer = new ResizeObserver(() => drawFrame(1));
+      const observer = new ResizeObserver(() => {
+        if (panelActive) drawFrame(1);
+      });
       observer.observe(shell);
+      document.addEventListener('tp:panel-change', event => {
+        panelActive = event.detail === 'principle';
+        if (panelActive) {
+          stageStarted = performance.now();
+          drawFrame(playing ? 0 : 1);
+        }
+      });
       makeSource();
       updateStage(0);
+      if (!playing) {
+        playButton.textContent = '播放';
+        playButton.setAttribute('aria-pressed', 'true');
+      }
       cancelAnimationFrame(frameRequest);
       frameRequest = requestAnimationFrame(animate);
     })();
@@ -841,6 +1664,557 @@
   </section>
 
   <footer>用于说明 AI 游戏素材的确定性真像素化处理原理。</footer>
+  </section>
+
+  <script>
+    (() => {
+      const byId = id => document.getElementById(id);
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+      const panels = {
+        tool: byId('tool-panel'),
+        principle: byId('principle-panel')
+      };
+      const serviceState = byId('service-state');
+      const fileProtocolNote = byId('file-protocol-note');
+      const form = byId('pixel-form');
+      const submitButton = byId('submit-button');
+      const formStatus = byId('form-status');
+      const sourceInput = byId('source-image');
+      const maskInput = byId('mask-image');
+      const uploadZone = byId('upload-zone');
+      const uploadTitle = byId('upload-title');
+      const sourcePreview = byId('source-preview');
+      const sourceEmpty = byId('source-empty');
+      const sourceMeta = byId('source-meta');
+      const resultPreview = byId('result-preview');
+      const resultEmpty = byId('result-empty');
+      const resultMeta = byId('result-meta');
+      const processingState = byId('processing-state');
+      const resultArea = byId('result-area');
+      const paletteSwatches = byId('palette-swatches');
+      const warningList = byId('warning-list');
+      const widthInput = byId('target-width');
+      const heightInput = byId('target-height');
+      const thresholdInput = byId('alpha-threshold');
+      const thresholdOutput = byId('alpha-threshold-output');
+      const thresholdField = byId('alpha-threshold-field');
+      const keyColorEnabled = byId('key-color-enabled');
+      const keyColorFields = byId('key-color-fields');
+      const downloadButtons = Array.from(document.querySelectorAll('[data-download]'));
+
+      const state = {
+        sourceFile: null,
+        sourceUrl: null,
+        resultUrl: null,
+        downloadUrls: {},
+        files: {},
+        processingMode: null,
+        serviceReady: false,
+        processing: false
+      };
+
+      let browserWorker = null;
+      let browserReadyPromise = null;
+      let resolveBrowserReady = null;
+      let rejectBrowserReady = null;
+      let browserRequestSequence = 0;
+      const browserRequests = new Map();
+
+      function activateTab(name, moveFocus = false) {
+        tabs.forEach(tab => {
+          const selected = tab.dataset.tab === name;
+          tab.setAttribute('aria-selected', String(selected));
+          tab.tabIndex = selected ? 0 : -1;
+          if (selected && moveFocus) tab.focus();
+        });
+        Object.entries(panels).forEach(([panelName, panel]) => {
+          panel.hidden = panelName !== name;
+        });
+        document.dispatchEvent(new CustomEvent('tp:panel-change', { detail: name }));
+      }
+
+      tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => activateTab(tab.dataset.tab));
+        tab.addEventListener('keydown', event => {
+          let nextIndex = null;
+          if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+          if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+          if (event.key === 'Home') nextIndex = 0;
+          if (event.key === 'End') nextIndex = tabs.length - 1;
+          if (nextIndex !== null) {
+            event.preventDefault();
+            activateTab(tabs[nextIndex].dataset.tab, true);
+          }
+        });
+      });
+
+      function setServiceStatus(status, text) {
+        serviceState.dataset.state = status;
+        serviceState.textContent = text;
+      }
+
+      function setFormStatus(text, isError = false) {
+        formStatus.textContent = text;
+        formStatus.classList.toggle('is-error', isError);
+        formStatus.setAttribute('role', isError ? 'alert' : 'status');
+      }
+
+      function syncSubmitState() {
+        submitButton.disabled = !state.sourceFile || !state.serviceReady || state.processing;
+        if (state.processing) {
+          submitButton.textContent = '正在处理';
+        } else {
+          submitButton.textContent = '生成真像素图';
+        }
+      }
+
+      function failBrowserEngine(reason) {
+        const error = reason instanceof Error ? reason : new Error(String(reason));
+        if (rejectBrowserReady) rejectBrowserReady(error);
+        resolveBrowserReady = null;
+        rejectBrowserReady = null;
+        browserRequests.forEach(request => request.reject(error));
+        browserRequests.clear();
+        if (browserWorker) browserWorker.terminate();
+        browserWorker = null;
+        browserReadyPromise = null;
+        if (state.processingMode === 'browser') {
+          state.processingMode = null;
+          state.serviceReady = false;
+          setServiceStatus('error', '浏览器处理引擎不可用');
+          syncSubmitState();
+        }
+      }
+
+      function handleBrowserWorkerMessage(event) {
+        const message = event.data || {};
+        if (message.type === 'status') {
+          const labels = {
+            runtime: '正在下载浏览器处理组件',
+            packages: '正在加载图像处理组件',
+            source: '正在载入真像素化程序'
+          };
+          setServiceStatus('checking', labels[message.stage] || '正在准备处理引擎');
+          return;
+        }
+        if (message.type === 'ready') {
+          if (resolveBrowserReady) resolveBrowserReady();
+          resolveBrowserReady = null;
+          rejectBrowserReady = null;
+          return;
+        }
+        if (message.type === 'fatal') {
+          failBrowserEngine(new Error(message.message || '浏览器处理引擎加载失败。'));
+          return;
+        }
+        if (message.type !== 'result' && message.type !== 'request-error') return;
+        const request = browserRequests.get(message.requestId);
+        if (!request) return;
+        browserRequests.delete(message.requestId);
+        if (message.type === 'request-error') {
+          request.reject(new Error(message.error?.message || '浏览器处理失败。'));
+          return;
+        }
+        const files = {};
+        Object.entries(message.files || {}).forEach(([key, descriptor]) => {
+          files[key] = new Blob([descriptor.buffer], { type: descriptor.type });
+        });
+        request.resolve({ payload: message.payload, files });
+      }
+
+      function initializeBrowserEngine() {
+        if (browserReadyPromise) return browserReadyPromise;
+        browserReadyPromise = new Promise((resolve, reject) => {
+          resolveBrowserReady = resolve;
+          rejectBrowserReady = reject;
+        });
+        const pendingReady = browserReadyPromise;
+        try {
+          browserWorker = new Worker(new URL('pixelizer-worker.js', document.baseURI));
+          browserWorker.addEventListener('message', handleBrowserWorkerMessage);
+          browserWorker.addEventListener('error', event => {
+            event.preventDefault();
+            failBrowserEngine(new Error(event.message || '浏览器处理引擎加载失败。'));
+          });
+          browserWorker.postMessage({ type: 'init' });
+        } catch (error) {
+          failBrowserEngine(error);
+        }
+        return pendingReady;
+      }
+
+      async function processWithBrowser(config, maskFile) {
+        await initializeBrowserEngine();
+        if (!browserWorker) throw new Error('浏览器处理引擎不可用。');
+        const image = await state.sourceFile.arrayBuffer();
+        const mask = maskFile ? await maskFile.arrayBuffer() : null;
+        const requestId = ++browserRequestSequence;
+        return new Promise((resolve, reject) => {
+          browserRequests.set(requestId, { resolve, reject });
+          const transfers = [image];
+          if (mask) transfers.push(mask);
+          browserWorker.postMessage({
+            type: 'process',
+            requestId,
+            config,
+            image,
+            mask
+          }, transfers);
+        });
+      }
+
+      async function processWithServer(config, maskFile) {
+        const body = new FormData();
+        body.append('image', state.sourceFile, state.sourceFile.name);
+        body.append('config', JSON.stringify(config));
+        if (maskFile) body.append('mask', maskFile, maskFile.name);
+        const response = await fetch(new URL('api/pixelize', document.baseURI), {
+          method: 'POST',
+          body,
+          credentials: 'same-origin'
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+        const responseParts = await response.formData();
+        const resultPart = responseParts.get('result');
+        if (resultPart === null) throw new Error('处理结果缺少摘要数据');
+        const resultText = resultPart instanceof Blob ? await resultPart.text() : String(resultPart);
+        const payload = JSON.parse(resultText);
+        const files = {
+          sprite: responseParts.get('sprite'),
+          preview: responseParts.get('preview'),
+          report: responseParts.get('report'),
+          manifest: responseParts.get('manifest'),
+          bundle: responseParts.get('bundle')
+        };
+        if (Object.values(files).some(file => !(file instanceof Blob))) {
+          throw new Error('处理结果文件不完整');
+        }
+        return { payload, files };
+      }
+
+      async function checkService() {
+        if (window.location.protocol === 'file:') {
+          state.serviceReady = false;
+          state.processingMode = null;
+          fileProtocolNote.hidden = false;
+          setServiceStatus('error', '需通过本地服务打开');
+          syncSubmitState();
+          return;
+        }
+        try {
+          const response = await fetch(new URL('api/health', document.baseURI), { cache: 'no-store' });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) throw new Error('health check failed');
+          state.processingMode = 'server';
+          state.serviceReady = true;
+          fileProtocolNote.hidden = true;
+          setServiceStatus('ready', '本地处理服务已连接');
+          if (!state.sourceFile) setFormStatus('请先选择源图片');
+        } catch (error) {
+          try {
+            await initializeBrowserEngine();
+            state.processingMode = 'browser';
+            state.serviceReady = true;
+            fileProtocolNote.hidden = true;
+            setServiceStatus('ready', '浏览器处理已就绪');
+            setFormStatus(state.sourceFile ? '图片已就绪' : '请先选择源图片');
+          } catch (browserError) {
+            state.processingMode = null;
+            state.serviceReady = false;
+            setServiceStatus('error', '处理引擎加载失败');
+            setFormStatus('处理组件未能加载，请检查网络后刷新页面', true);
+          }
+        }
+        syncSubmitState();
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function supportedImage(file) {
+        return ['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+      }
+
+      function clearResult() {
+        if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
+        Object.values(state.downloadUrls).forEach(url => URL.revokeObjectURL(url));
+        state.resultUrl = null;
+        state.downloadUrls = {};
+        state.files = {};
+        resultPreview.removeAttribute('src');
+        resultPreview.hidden = true;
+        processingState.hidden = true;
+        resultEmpty.hidden = false;
+        resultMeta.textContent = '等待处理';
+        resultArea.hidden = true;
+        paletteSwatches.replaceChildren();
+        warningList.replaceChildren();
+        warningList.hidden = true;
+      }
+
+      function setSourceFile(file) {
+        if (!file) return;
+        if (!supportedImage(file)) {
+          setFormStatus('请选择 PNG、JPEG 或 WebP 静态图片', true);
+          return;
+        }
+        if (file.size > 20_000_000) {
+          setFormStatus('源图片不能超过 20 MB', true);
+          return;
+        }
+        if (state.sourceUrl) URL.revokeObjectURL(state.sourceUrl);
+        state.sourceFile = file;
+        state.sourceUrl = URL.createObjectURL(file);
+        sourcePreview.src = state.sourceUrl;
+        sourcePreview.hidden = false;
+        sourceEmpty.hidden = true;
+        uploadTitle.textContent = file.name;
+        sourceMeta.textContent = formatBytes(file.size);
+        sourcePreview.onload = () => {
+          sourceMeta.textContent = `${sourcePreview.naturalWidth}×${sourcePreview.naturalHeight} · ${formatBytes(file.size)}`;
+        };
+        clearResult();
+        setFormStatus(state.serviceReady ? '图片已就绪' : '图片已选择，等待处理引擎');
+        syncSubmitState();
+      }
+
+      sourceInput.addEventListener('change', () => setSourceFile(sourceInput.files[0]));
+      ['dragenter', 'dragover'].forEach(type => {
+        uploadZone.addEventListener(type, event => {
+          event.preventDefault();
+          uploadZone.classList.add('is-dragging');
+        });
+      });
+      ['dragleave', 'drop'].forEach(type => {
+        uploadZone.addEventListener(type, event => {
+          event.preventDefault();
+          uploadZone.classList.remove('is-dragging');
+        });
+      });
+      uploadZone.addEventListener('drop', event => {
+        const file = event.dataTransfer.files[0];
+        if (file) setSourceFile(file);
+      });
+
+      function updatePresetState() {
+        const width = Number(widthInput.value);
+        const height = Number(heightInput.value);
+        document.querySelectorAll('.size-preset').forEach(button => {
+          button.classList.toggle('is-active', width === Number(button.dataset.size) && height === Number(button.dataset.size));
+        });
+      }
+
+      document.querySelectorAll('.size-preset').forEach(button => {
+        button.addEventListener('click', () => {
+          widthInput.value = button.dataset.size;
+          heightInput.value = button.dataset.size;
+          updatePresetState();
+          clearResult();
+        });
+      });
+
+      function updateConditionalFields() {
+        const binary = form.elements.alpha_mode.value === 'binary';
+        thresholdField.hidden = !binary;
+        keyColorFields.hidden = !keyColorEnabled.checked;
+      }
+
+      function parseColors(value, label) {
+        const items = value.trim() ? value.trim().split(/[\s,;]+/).filter(Boolean) : [];
+        return items.map(item => {
+          const color = item.startsWith('#') ? item : `#${item}`;
+          if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color)) {
+            throw new Error(`${label}中包含无效颜色：${item}`);
+          }
+          if (color.length === 4) {
+            return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`.toUpperCase();
+          }
+          return color.toUpperCase();
+        });
+      }
+
+      function integerValue(id, label, minimum, maximum) {
+        const value = Number(byId(id).value);
+        if (!Number.isInteger(value) || value < minimum || value > maximum) {
+          throw new Error(`${label}必须是 ${minimum} 到 ${maximum} 之间的整数`);
+        }
+        return value;
+      }
+
+      function buildConfig() {
+        const width = integerValue('target-width', '宽度', 1, 1024);
+        const height = integerValue('target-height', '高度', 1, 1024);
+        const maxColors = integerValue('max-colors', '最大颜色数', 1, 256);
+        const padding = integerValue('padding', '画布留白', 0, 511);
+        const previewScale = integerValue('preview-scale', '预览倍率', 1, 64);
+        const alphaThreshold = Number(thresholdInput.value);
+        const keyTolerance = Number(byId('key-tolerance').value);
+        if (width * height > 1_048_576) throw new Error('目标网格最多包含 1,048,576 个像素');
+        if (padding * 2 >= Math.min(width, height)) throw new Error('画布留白必须至少保留一个可用像素');
+        if (width * height * previewScale * previewScale > 16_777_216) throw new Error('当前逻辑尺寸与预览倍率组合过大');
+        if (!Number.isFinite(alphaThreshold) || alphaThreshold < 0 || alphaThreshold > 1) throw new Error('透明阈值必须在 0 到 1 之间');
+        if (!Number.isFinite(keyTolerance) || keyTolerance < 0 || keyTolerance > 441.7) throw new Error('背景颜色容差必须在 0 到 441.7 之间');
+
+        const palette = parseColors(byId('fixed-palette').value, '固定调色板');
+        const lockedColors = parseColors(byId('locked-colors').value, '锁定颜色');
+        if (palette.length > maxColors) throw new Error('固定调色板的颜色数不能超过最大颜色数');
+        if (lockedColors.length > maxColors) throw new Error('锁定颜色数不能超过最大颜色数');
+        if (palette.length && lockedColors.some(color => !palette.includes(color))) throw new Error('固定调色板必须包含所有锁定颜色');
+
+        return {
+          width,
+          height,
+          max_colors: maxColors,
+          alpha_mode: form.elements.alpha_mode.value,
+          alpha_threshold: alphaThreshold,
+          fit: byId('fit-mode').value,
+          anchor: byId('anchor-mode').value,
+          trim: byId('trim-mode').value,
+          padding,
+          dither: byId('dither-enabled').checked ? 'bayer4' : 'none',
+          preview_scale: previewScale,
+          palette,
+          locked_colors: lockedColors,
+          key_color: keyColorEnabled.checked ? byId('key-color').value : null,
+          key_tolerance: keyColorEnabled.checked ? keyTolerance : 0
+        };
+      }
+
+      function translatedWarning(warning) {
+        if (warning.startsWith('The source is fully opaque')) return '源图完全不透明，因此背景会被保留；需要去除背景时请提供蒙版或指定背景颜色。';
+        if (warning.startsWith('The source subject is smaller')) return '源图主体在至少一个方向小于目标放置尺寸，放大部分使用最近邻采样。';
+        return '处理完成，但存在需要关注的输入条件。';
+      }
+
+      function renderResult(payload, files, elapsed) {
+        state.files = files;
+        state.resultUrl = URL.createObjectURL(files.preview);
+        resultPreview.src = state.resultUrl;
+        resultPreview.hidden = false;
+        resultEmpty.hidden = true;
+        processingState.hidden = true;
+        resultArea.hidden = false;
+
+        const summary = payload.summary;
+        const report = payload.report;
+        resultMeta.textContent = `${summary.size} · ${summary.preview_scale}× 预览`;
+        byId('result-time').textContent = `${elapsed.toFixed(1)} 秒`;
+        byId('metric-size').textContent = summary.size;
+        byId('metric-colors').textContent = `${summary.actual_color_count} / ${summary.maximum_colors}`;
+        byId('metric-alpha').textContent = summary.alpha_mode === 'binary' ? '0 / 255' : '保留半透明';
+        byId('metric-roundtrip').textContent = report.checks?.png_roundtrip?.passed ? '一致' : '未通过';
+
+        paletteSwatches.replaceChildren();
+        const usedColors = payload.palette_data.used_colors || payload.palette_data.generated_colors || [];
+        usedColors.forEach(entry => {
+          const swatch = document.createElement('span');
+          swatch.className = 'palette-swatch';
+          swatch.style.backgroundColor = entry.hex;
+          swatch.title = `${entry.hex} · ${entry.visible_pixels || 0} 像素`;
+          swatch.setAttribute('aria-label', entry.hex);
+          paletteSwatches.appendChild(swatch);
+        });
+
+        warningList.replaceChildren();
+        (payload.warnings || []).forEach(warning => {
+          const item = document.createElement('li');
+          item.textContent = translatedWarning(warning);
+          warningList.appendChild(item);
+        });
+        warningList.hidden = warningList.children.length === 0;
+        const downloadNames = {
+          sprite: 'sprite.png',
+          preview: `preview-${summary.preview_scale}x.png`,
+          report: 'report.json',
+          bundle: 'true-pixelizer-result.zip'
+        };
+        downloadButtons.forEach(link => {
+          const key = link.dataset.download;
+          const url = URL.createObjectURL(files[key]);
+          state.downloadUrls[key] = url;
+          link.href = url;
+          link.download = downloadNames[key];
+        });
+        setFormStatus('处理完成，可预览或下载结果');
+      }
+
+      async function responseError(response) {
+        try {
+          const payload = await response.json();
+          return payload.error?.message || '处理请求失败';
+        } catch (error) {
+          return '处理请求失败，请稍后重试';
+        }
+      }
+
+      form.addEventListener('input', event => {
+        if (event.target === thresholdInput) thresholdOutput.value = Number(thresholdInput.value).toFixed(2);
+        updatePresetState();
+        updateConditionalFields();
+        if (!state.processing && resultArea.hidden === false) clearResult();
+      });
+
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!state.sourceFile || !state.serviceReady || state.processing) return;
+        let config;
+        try {
+          config = buildConfig();
+          const mask = maskInput.files[0];
+          if (mask && (!supportedImage(mask) || mask.size > 20_000_000)) throw new Error('蒙版必须是 20 MB 以内的 PNG、JPEG 或 WebP 图片');
+        } catch (error) {
+          setFormStatus(error.message, true);
+          return;
+        }
+
+        clearResult();
+        state.processing = true;
+        resultEmpty.hidden = true;
+        processingState.hidden = false;
+        resultMeta.textContent = '处理中';
+        setFormStatus('正在调用真像素化工具');
+        syncSubmitState();
+        const started = performance.now();
+
+        try {
+          const result = state.processingMode === 'server'
+            ? await processWithServer(config, maskInput.files[0])
+            : await processWithBrowser(config, maskInput.files[0]);
+          renderResult(result.payload, result.files, (performance.now() - started) / 1000);
+        } catch (error) {
+          resultEmpty.hidden = false;
+          processingState.hidden = true;
+          resultMeta.textContent = '处理失败';
+          setFormStatus(error.message || '处理失败，请稍后重试', true);
+          if (error instanceof TypeError && state.processingMode === 'server') {
+            state.serviceReady = false;
+            setServiceStatus('error', '本地处理服务未连接');
+          }
+        } finally {
+          state.processing = false;
+          syncSubmitState();
+        }
+      });
+
+      window.addEventListener('beforeunload', () => {
+        if (state.sourceUrl) URL.revokeObjectURL(state.sourceUrl);
+        if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
+        Object.values(state.downloadUrls).forEach(url => URL.revokeObjectURL(url));
+        if (browserWorker) browserWorker.terminate();
+      });
+      window.addEventListener('focus', () => {
+        if (!state.serviceReady && window.location.protocol !== 'file:') checkService();
+      });
+
+      updatePresetState();
+      updateConditionalFields();
+      activateTab('tool');
+      checkService();
+    })();
+  </script>
 </main>
 </body>
 </html>
