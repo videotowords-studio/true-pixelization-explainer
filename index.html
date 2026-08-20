@@ -1760,9 +1760,11 @@
       }
 
       function syncSubmitState() {
-        submitButton.disabled = !state.sourceFile || !state.serviceReady || state.processing;
+        submitButton.disabled = !state.sourceFile || state.processing || window.location.protocol === 'file:';
         if (state.processing) {
           submitButton.textContent = '正在处理';
+        } else if (state.sourceFile && !state.serviceReady) {
+          submitButton.textContent = '准备引擎并生成';
         } else {
           submitButton.textContent = '生成真像素图';
         }
@@ -2159,7 +2161,7 @@
 
       form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (!state.sourceFile || !state.serviceReady || state.processing) return;
+        if (!state.sourceFile || state.processing) return;
         let config;
         try {
           config = buildConfig();
@@ -2175,11 +2177,18 @@
         resultEmpty.hidden = true;
         processingState.hidden = false;
         resultMeta.textContent = '处理中';
-        setFormStatus('正在调用真像素化工具');
+        setFormStatus(state.serviceReady ? '正在调用真像素化工具' : '正在等待处理引擎完成加载');
         syncSubmitState();
         const started = performance.now();
 
         try {
+          if (!state.serviceReady) {
+            await checkService();
+            if (!state.serviceReady || !state.processingMode) {
+              throw new Error('处理引擎未能就绪，请刷新页面后重试。');
+            }
+          }
+          setFormStatus('正在调用真像素化工具');
           const result = state.processingMode === 'server'
             ? await processWithServer(config, maskInput.files[0])
             : await processWithBrowser(config, maskInput.files[0]);

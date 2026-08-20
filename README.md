@@ -5,9 +5,12 @@
 - 「工具使用」：上传图片并设置参数，调用项目中的 `true-pixelizer` 完成真像素化。
 - 「查看原理」：用六阶段动画展示真像素化的处理过程。
 
-在线访问：<https://videotowords-studio.github.io/true-pixelization-explainer/>
+在线访问：
 
-在线页面通过 Pyodide 在浏览器内运行同一套 Python 核心，图片不会上传到第三方服务。首次使用需要下载约 10 MB 的浏览器运行组件，后续可使用浏览器缓存。
+- Cloudflare Pages：<https://true-pixelization-explainer.pages.dev/>
+- GitHub Pages：<https://videotowords-studio.github.io/true-pixelization-explainer/>
+
+在线页面通过 Pyodide 在浏览器内运行同一套 Python 核心，图片不会上传到第三方服务。浏览器运行组件与页面同域托管，首次使用需要下载约 10 MB 的压缩资源，后续可使用浏览器缓存。
 
 ## 启动页面
 

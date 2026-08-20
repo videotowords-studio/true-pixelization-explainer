@@ -1,7 +1,7 @@
 'use strict';
 
-const PYODIDE_INDEX_URL = 'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/';
 const PROJECT_URL = new URL('./', self.location.href);
+const PYODIDE_INDEX_URL = new URL('vendor/pyodide-0.29.4/', PROJECT_URL).href;
 const PYTHON_ROOT = '/home/pyodide';
 const SOURCE_FILES = [
   'server.py',

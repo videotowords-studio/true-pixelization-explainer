@@ -17,3 +17,6 @@ dist/
 
 # Generated pixelizer artifacts
 true-pixelizer/outputs/
+
+# Cloudflare CLI cache
+.wrangler/
